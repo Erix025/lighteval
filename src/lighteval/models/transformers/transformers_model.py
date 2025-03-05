@@ -43,7 +43,11 @@ from transformers import (
 from transformers.generation.utils import GenerateOutput, GenerationConfig
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 
-from lighteval.data import GenerativeTaskDataset, LoglikelihoodDataset, LoglikelihoodSingleTokenDataset
+from lighteval.data import (
+    GenerativeTaskDataset,
+    LoglikelihoodDataset,
+    LoglikelihoodSingleTokenDataset,
+)
 from lighteval.models.abstract_model import LightevalModel, ModelInfo
 from lighteval.models.model_input import GenerationParameters
 from lighteval.models.model_output import (
@@ -161,7 +165,9 @@ class TransformersModelConfig:
 
     def __post_init__(self):
         # Making sure this parameter is a boolean
-        self.multichoice_continuations_start_space = boolstring_to_bool(self.multichoice_continuations_start_space)
+        self.multichoice_continuations_start_space = boolstring_to_bool(
+            self.multichoice_continuations_start_space
+        )
 
         if self.multichoice_continuations_start_space is not None:
             if self.multichoice_continuations_start_space:
@@ -207,25 +213,33 @@ class TransformersModelConfig:
         # Gathering the model's automatic quantization config, if available
         try:
             model_auto_quantization_config = auto_config.quantization_config
-            logger.info("An automatic quantization config was found in the model's config. Using it to load the model")
+            logger.info(
+                "An automatic quantization config was found in the model's config. Using it to load the model"
+            )
         except (AttributeError, KeyError):
             model_auto_quantization_config = None
 
         if model_auto_quantization_config is not None:
             if self.quantization_config is not None:
                 # We don't load models quantized by default with a different user provided conf
-                raise ValueError("You manually requested quantization on a model already quantized!")
+                raise ValueError(
+                    "You manually requested quantization on a model already quantized!"
+                )
 
             # We add the quantization to the model params we store
             if model_auto_quantization_config["quant_method"] == "gptq":
                 if not is_autogptq_available():
                     raise ImportError(NO_AUTOGPTQ_ERROR_MSG)
                 auto_config.quantization_config["use_exllama"] = None
-                self.quantization_config = GPTQConfig(**auto_config.quantization_config, disable_exllama=True)
+                self.quantization_config = GPTQConfig(
+                    **auto_config.quantization_config, disable_exllama=True
+                )
             elif model_auto_quantization_config["quant_method"] == "bitsandbytes":
                 if not is_bnb_available():
                     raise ImportError(NO_BNB_ERROR_MSG)
-                self.quantization_config = BitsAndBytesConfig(**auto_config.quantization_config)
+                self.quantization_config = BitsAndBytesConfig(
+                    **auto_config.quantization_config
+                )
 
         return auto_config
 
@@ -259,7 +273,11 @@ class TransformersModel(LightevalModel):
         self._max_length = self._init_max_length(config.max_length)
         self.use_chat_template = config.use_chat_template
 
-        self._add_special_tokens = config.add_special_tokens if config.add_special_tokens is not None else False
+        self._add_special_tokens = (
+            config.add_special_tokens
+            if config.add_special_tokens is not None
+            else False
+        )
         self._tokenizer = self._create_auto_tokenizer(config, env_config)
 
         # If model_parallel is not set we compare the number of processes with the number of GPUs
@@ -267,12 +285,20 @@ class TransformersModel(LightevalModel):
         self.model.eval()
         torch.set_grad_enabled(False)
 
-        self._device = config.accelerator.device if config.accelerator is not None else "cpu"
-        self.multichoice_continuations_start_space = config.multichoice_continuations_start_space
+        self._device = (
+            config.accelerator.device if config.accelerator is not None else "cpu"
+        )
+        self.multichoice_continuations_start_space = (
+            config.multichoice_continuations_start_space
+        )
 
         # We are in DP (and launch the script with `accelerate launch`)
-        if not config.model_parallel and not isinstance(config.quantization_config, BitsAndBytesConfig):
-            logger.info(f"Using Data Parallelism, putting model on device {self._device}")
+        if not config.model_parallel and not isinstance(
+            config.quantization_config, BitsAndBytesConfig
+        ):
+            logger.info(
+                f"Using Data Parallelism, putting model on device {self._device}"
+            )
             self.model = self.model.to(self._device)
         if config.compile:
             try:
@@ -287,7 +313,9 @@ class TransformersModel(LightevalModel):
         self.precision = _get_dtype(config.dtype, config=self._config)
         if config.generation_config is None:
             self.generation_parameters = config.generation_parameters
-            self.generation_config_dict = self.generation_parameters.to_transformers_dict()
+            self.generation_config_dict = (
+                self.generation_parameters.to_transformers_dict()
+            )
         else:
             self.generation_config_dict = config.generation_config.to_dict()
 
@@ -320,7 +348,10 @@ class TransformersModel(LightevalModel):
     ):
         # Slightly hackish way to test if the model is a AutoModelForCausalLM, since the instances don't
         # derive from this class explicitely
-        assert isinstance(model, LightevalModel) or type(model).__name__ in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values()
+        assert (
+            isinstance(model, LightevalModel)
+            or type(model).__name__ in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values()
+        )
 
         if isinstance(model, LightevalModel):
             return model
@@ -352,9 +383,13 @@ class TransformersModel(LightevalModel):
             self._device = "cpu"
 
         self.use_chat_template = use_chat_template
-        self._add_special_tokens = add_special_tokens if add_special_tokens is not None else False
+        self._add_special_tokens = (
+            add_special_tokens if add_special_tokens is not None else False
+        )
         self.pairwise_tokenization = pairwise_tokenization
-        self.multichoice_continuations_start_space = multichoice_continuations_start_space
+        self.multichoice_continuations_start_space = (
+            multichoice_continuations_start_space
+        )
 
         self.precision = _get_dtype(model.dtype, config=self._config)
 
@@ -383,7 +418,9 @@ class TransformersModel(LightevalModel):
     def max_length(self) -> int:
         return self._max_length
 
-    def init_model_parallel(self, model_parallel: bool | None = None) -> Tuple[bool, Optional[dict], Optional[str]]:
+    def init_model_parallel(
+        self, model_parallel: bool | None = None
+    ) -> Tuple[bool, Optional[dict], Optional[str]]:
         """Compute all the parameters related to model_parallel"""
         if not is_accelerate_available():
             return False, None, None
@@ -391,11 +428,15 @@ class TransformersModel(LightevalModel):
         self.num_local_processes = int(os.environ.get("LOCAL_WORLD_SIZE", 1))
         self.num_machines = torch.cuda.device_count() // self.num_local_processes
         if self.num_machines == 0:
-            logger.info("We are not in a distributed setting. Setting model_parallel to False.")
+            logger.info(
+                "We are not in a distributed setting. Setting model_parallel to False."
+            )
             model_parallel = False
 
         if model_parallel is None:
-            max_memory_all_gpus = get_max_memory()  # A dict of the max memory for all the gpus
+            max_memory_all_gpus = (
+                get_max_memory()
+            )  # A dict of the max memory for all the gpus
             if "cpu" in max_memory_all_gpus:
                 del max_memory_all_gpus["cpu"]
             model_parallel = bool(self.num_local_processes < len(max_memory_all_gpus))
@@ -405,13 +446,16 @@ class TransformersModel(LightevalModel):
                 f"and the number of GPUs is {len(max_memory_all_gpus)}"
             )
         if model_parallel is True:
-            max_memory_all_gpus = get_max_memory()  # A dict of the max memory for all the gpus
+            max_memory_all_gpus = (
+                get_max_memory()
+            )  # A dict of the max memory for all the gpus
             if "cpu" in max_memory_all_gpus:
                 del max_memory_all_gpus["cpu"]
             max_mem_this_process = {
                 k: v
                 for k, v in max_memory_all_gpus.items()
-                if k % self.num_local_processes == (self.accelerator.process_index % self.num_local_processes)
+                if k % self.num_local_processes
+                == (self.accelerator.process_index % self.num_local_processes)
             }
             device_map = "auto"
             logger.info(
@@ -445,12 +489,15 @@ class TransformersModel(LightevalModel):
         Returns:
             transformers.PreTrainedModel: The created auto model instance.
         """
-        config.model_parallel, max_memory, device_map = self.init_model_parallel(config.model_parallel)
+        config.model_parallel, max_memory, device_map = self.init_model_parallel(
+            config.model_parallel
+        )
         torch_dtype = _get_dtype(config.dtype, self._config)
 
         model = AutoModelForCausalLM.from_pretrained(
             config.pretrained,
-            revision=config.revision + (f"/{config.subfolder}" if config.subfolder is not None else ""),
+            revision=config.revision
+            + (f"/{config.subfolder}" if config.subfolder is not None else ""),
             max_memory=max_memory,
             device_map=device_map,
             torch_dtype=torch_dtype,
@@ -592,24 +639,35 @@ class TransformersModel(LightevalModel):
         if self.multichoice_continuations_start_space is not None:
             if self.multichoice_continuations_start_space and continuation[0] != " ":
                 continuation = " " + continuation
-            if not self.multichoice_continuations_start_space and continuation[0] == " ":
+            if (
+                not self.multichoice_continuations_start_space
+                and continuation[0] == " "
+            ):
                 continuation = continuation.lstrip()
         return continuation
 
     def _model_call(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs).logits
 
-    def _get_batch_size(self, max_input_length: int, override_bs: int = 0, starting_batch_size: int = 512) -> int:
+    def _get_batch_size(
+        self,
+        max_input_length: int,
+        override_bs: int = 0,
+        starting_batch_size: int = 512,
+    ) -> int:
         if override_bs > 0:
             return override_bs
-        logger.info(f"Detecting largest batch size with max_input_length={max_input_length}")
+        logger.info(
+            f"Detecting largest batch size with max_input_length={max_input_length}"
+        )
 
         @find_executable_batch_size(
             starting_batch_size=starting_batch_size
         )  # if OOM, then halves batch_size and tries again
         def forward_batch(batch_size):
             test_batch = torch.ones(
-                (batch_size + int(0.1 * batch_size), max_input_length), device=self.device
+                (batch_size + int(0.1 * batch_size), max_input_length),
+                device=self.device,
             ).long()  # We add 10% for marging :)
             F.log_softmax(self._model_call(test_batch).float(), dim=-1).cpu()
             return batch_size
@@ -619,10 +677,14 @@ class TransformersModel(LightevalModel):
         return batch_size
 
     def greedy_until_multi_turn(  # noqa: C901
-        self, requests: list[GreedyUntilMultiTurnRequest], override_bs: Optional[int] = None
+        self,
+        requests: list[GreedyUntilMultiTurnRequest],
+        override_bs: Optional[int] = None,
     ) -> GenerativeMultiturnResponse:
         for request in requests:
-            request.stop_sequence = as_list(request.stop_sequence) + [self.tokenizer.eos_token]
+            request.stop_sequence = as_list(request.stop_sequence) + [
+                self.tokenizer.eos_token
+            ]
             request.tokenized_context = self.tok_encode(request.context)["input_ids"]
 
         results = []
@@ -633,10 +695,16 @@ class TransformersModel(LightevalModel):
         if self.accelerator:
             dataloader = self.accelerator.prepare(dataloader)
 
-        logger.warning("Running greedy multi turn generation, the batch size is set to 1 for this task.")
+        logger.warning(
+            "Running greedy multi turn generation, the batch size is set to 1 for this task."
+        )
 
         for request_batch in tqdm(
-            dataloader, desc="Greedy Multi Turn generation", position=1, leave=False, disable=self.disable_tqdm
+            dataloader,
+            desc="Greedy Multi Turn generation",
+            position=1,
+            leave=False,
+            disable=self.disable_tqdm,
         ):
             request = request_batch[0]
             # For chat models, generation stops with EOS token, so we don't need to specify stop tokens
@@ -661,7 +729,9 @@ class TransformersModel(LightevalModel):
                 [
                     *[
                         MultiTokenEOSCriteria(
-                            sequence, self.tokenizer, input_ids_shape=model_inputs["input_ids"].shape
+                            sequence,
+                            self.tokenizer,
+                            input_ids_shape=model_inputs["input_ids"].shape,
                         )
                         for sequence in stop_tokens
                     ],
@@ -672,9 +742,11 @@ class TransformersModel(LightevalModel):
             generation_config.update(
                 {
                     "max_new_tokens": max_generated_tokens,
-                    "pad_token_id": self.tokenizer.pad_token_id
-                    if self.tokenizer.pad_token_id
-                    else self.tokenizer.eos_token_id,
+                    "pad_token_id": (
+                        self.tokenizer.pad_token_id
+                        if self.tokenizer.pad_token_id
+                        else self.tokenizer.eos_token_id
+                    ),
                     "eos_token_id": self.tokenizer.eos_token_id,
                     "do_sample": False,
                 }
@@ -683,11 +755,15 @@ class TransformersModel(LightevalModel):
             model_outputs: GenerateOutput = self.model.generate(
                 **model_inputs, stopping_criteria=stopping_criteria, **generation_config
             )
-            model_outputs = model_outputs.sequences[0, model_inputs["input_ids"].size(1) :]
+            model_outputs = model_outputs.sequences[
+                0, model_inputs["input_ids"].size(1) :
+            ]
 
             # We manage stop tokens in an extra step in case they were incorrectly detected earlier
             # (which can happen for multitoken stop sequences)
-            decoded_generation = self.tokenizer.decode(model_outputs)  # should we skip_special_tokens=True here?
+            decoded_generation = self.tokenizer.decode(
+                model_outputs
+            )  # should we skip_special_tokens=True here?
             for term in stop_tokens:
                 decoded_generation = decoded_generation.split(term)[0]
             model_generations = [model_outputs]
@@ -695,7 +771,9 @@ class TransformersModel(LightevalModel):
             input_tokens = [model_inputs["input_ids"]]
 
             for i, multi_turn_context in enumerate(request.context[1:]):
-                multi_turn_context = multi_turn_context.format(model_response=decoded_generation)
+                multi_turn_context = multi_turn_context.format(
+                    model_response=decoded_generation
+                )
 
                 model_inputs = self.tokenizer(
                     multi_turn_context,
@@ -710,7 +788,9 @@ class TransformersModel(LightevalModel):
                     [
                         *[
                             MultiTokenEOSCriteria(
-                                sequence, self.tokenizer, input_ids_shape=model_inputs["input_ids"].shape
+                                sequence,
+                                self.tokenizer,
+                                input_ids_shape=model_inputs["input_ids"].shape,
                             )
                             for sequence in stop_tokens
                         ],
@@ -721,9 +801,11 @@ class TransformersModel(LightevalModel):
                 generation_config.update(
                     {
                         "max_new_tokens": max_generated_tokens,
-                        "pad_token_id": self.tokenizer.pad_token_id
-                        if self.tokenizer.pad_token_id
-                        else self.tokenizer.eos_token_id,
+                        "pad_token_id": (
+                            self.tokenizer.pad_token_id
+                            if self.tokenizer.pad_token_id
+                            else self.tokenizer.eos_token_id
+                        ),
                         "eos_token_id": self.tokenizer.eos_token_id,
                         "do_sample": False,
                     }
@@ -735,11 +817,15 @@ class TransformersModel(LightevalModel):
                     stopping_criteria=stopping_criteria,
                     **generation_config,
                 )
-                model_outputs = model_outputs.sequences[0, model_inputs["input_ids"].size(1) :]
+                model_outputs = model_outputs.sequences[
+                    0, model_inputs["input_ids"].size(1) :
+                ]
                 model_generations.append(model_outputs)
                 input_tokens.append(model_inputs["input_ids"])
 
-                decoded_generation = self.tokenizer.decode(model_outputs, skip_special_tokens=True)
+                decoded_generation = self.tokenizer.decode(
+                    model_outputs, skip_special_tokens=True
+                )
                 for term in stop_tokens:
                     decoded_generation = decoded_generation.split(term)[0]
 
@@ -747,10 +833,14 @@ class TransformersModel(LightevalModel):
                 padding_size = max(gen.shape[0] for gen in model_generations)
                 for i, gen in enumerate(model_generations):
                     model_generations[i] = F.pad(
-                        gen, (0, padding_size - gen.shape[0]), value=self.tokenizer.pad_token_id
+                        gen,
+                        (0, padding_size - gen.shape[0]),
+                        value=self.tokenizer.pad_token_id,
                     )
                 model_generations = torch.stack(model_generations, dim=0)
-                model_generations, lengths = self.pad_and_gather(model_generations, drop_last_samples=False)
+                model_generations, lengths = self.pad_and_gather(
+                    model_generations, drop_last_samples=False
+                )
 
             model_answers = []
             for generation, _ in zip(model_generations, lengths):
@@ -787,10 +877,14 @@ class TransformersModel(LightevalModel):
             list[GenerativeResponse]: list of generated responses.
         """
         for request in requests:
-            request.stop_sequence = as_list(request.stop_sequence) + [self.tokenizer.eos_token]
+            request.stop_sequence = as_list(request.stop_sequence) + [
+                self.tokenizer.eos_token
+            ]
             request.tokenized_context = self.tok_encode(request.context)
 
-        dataset = GenerativeTaskDataset(requests=requests, num_dataset_splits=self.DATASET_SPLITS)
+        dataset = GenerativeTaskDataset(
+            requests=requests, num_dataset_splits=self.DATASET_SPLITS
+        )
         starting_batch_size = STARTING_BATCH_SIZE
         results = []
 
@@ -820,12 +914,18 @@ class TransformersModel(LightevalModel):
             # For next iteration, since the batch will be smaller, we'll test a bigger batch size
             starting_batch_size = batch_size * 2
 
-            dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=lambda batch: batch)
+            dataloader = DataLoader(
+                dataset, batch_size=batch_size, collate_fn=lambda batch: batch
+            )
             if self.accelerator:
                 dataloader = self.accelerator.prepare(dataloader)
 
             for batch in tqdm(
-                dataloader, desc="Greedy generation", position=1, leave=False, disable=self.disable_tqdm
+                dataloader,
+                desc="Greedy generation",
+                position=1,
+                leave=False,
+                disable=self.disable_tqdm,
             ):
                 # For chat models, generation stops with EOS token, so we don't need to specify stop tokens
                 if self.use_chat_template:
@@ -839,7 +939,7 @@ class TransformersModel(LightevalModel):
                 max_new_tokens = batch[0].generation_size
                 returns_logits = batch[0].use_logits
                 num_samples = batch[0].num_samples
-                do_sample = batch[0].do_sample
+                do_sample = self.generation_config_dict.get("do_sample")
 
                 context = [c.context for c in batch]
 
@@ -847,8 +947,8 @@ class TransformersModel(LightevalModel):
                 # Will do left truncation and padding, as defined when creating the tokenizer
                 tokenized = self.tokenizer(
                     context,
-                    truncation="longest_first",  # we truncate to the model max length if needed
-                    padding="max_length",  # we pad to the longest sequence
+                    truncation=True,
+                    padding=True,
                     return_tensors="pt",
                     max_length=max_context_continuation_size_allowed,  # we always allow minimum one token of generation
                     add_special_tokens=self.add_special_tokens,
@@ -869,18 +969,27 @@ class TransformersModel(LightevalModel):
                     # There will be truncation of at least one sample, maximum generation size will be one
                     max_new_tokens = 1
                 else:  # We can't allow generation of more than max_length
-                    if max_new_tokens is None:  # If generation size is not set, we go all the way
+                    if (
+                        max_new_tokens is None
+                    ):  # If generation size is not set, we go all the way
                         max_new_tokens = self.max_length - context_size
                     else:
-                        max_new_tokens = min(self.max_length - context_size, max_new_tokens)
+                        max_new_tokens = min(
+                            self.max_length - context_size, max_new_tokens
+                        )
                         if max_new_tokens < 1:
                             max_new_tokens = 1
 
                 prepared_batch = Batch(
                     input_ids=tokenized["input_ids"],
-                    input_lengths=[len(item == 1) for item in tokenized["attention_mask"]],
+                    input_lengths=[
+                        len(item == 1) for item in tokenized["attention_mask"]
+                    ],
                     input_mask=tokenized["attention_mask"],
-                    truncated=[max(len(c) - tokenized["input_ids"].shape[1], 0) for c in context],
+                    truncated=[
+                        max(len(c) - tokenized["input_ids"].shape[1], 0)
+                        for c in context
+                    ],
                     padded=[sum(mask == 0) for mask in tokenized["attention_mask"]],
                 )
 
@@ -908,13 +1017,19 @@ class TransformersModel(LightevalModel):
         """Contains the actual logic of the generation.
         First computes the stop sequences, then generates the predictions, then converts the outputs to GenerativeResponse.
         """
-        stopping_criteria = stop_sequences_criteria(self.tokenizer, stop_sequences=stop_tokens, batch=batch)
+        stopping_criteria = stop_sequences_criteria(
+            self.tokenizer, stop_sequences=stop_tokens, batch=batch
+        )
         batch_size, _ = batch.input_ids.shape
 
         generation_config = self.generation_config_dict.copy()
         generation_config.update(
             max_new_tokens=max_new_tokens,
-            pad_token_id=self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else self.tokenizer.eos_token_id,
+            pad_token_id=(
+                self.tokenizer.pad_token_id
+                if self.tokenizer.pad_token_id
+                else self.tokenizer.eos_token_id
+            ),
             eos_token_id=self.tokenizer.eos_token_id,
             do_sample=do_sample,
             num_return_sequences=num_samples,
@@ -931,7 +1046,9 @@ class TransformersModel(LightevalModel):
         )
         generations = outputs.sequences[:, batch.input_ids.size(1) :]
         generations = torch.reshape(generations, (batch_size, num_samples, -1))
-        generations, len_gens = self.pad_and_gather(generations, num_samples=num_samples)
+        generations, len_gens = self.pad_and_gather(
+            generations, num_samples=num_samples
+        )
         batch.input_ids, len_ids = self.pad_and_gather(batch.input_ids)
 
         logits, len_logits = None, None
@@ -997,8 +1114,12 @@ class TransformersModel(LightevalModel):
                 request.tokenized_continuation = self.tok_encode(request.choice)
             else:
                 # The following line is mandatory for compatibility with the harness
-                request.tokenized_context, request.tokenized_continuation = self.tok_encode_pair(
-                    request.context, request.choice, pairwise=self.pairwise_tokenization
+                request.tokenized_context, request.tokenized_continuation = (
+                    self.tok_encode_pair(
+                        request.context,
+                        request.choice,
+                        pairwise=self.pairwise_tokenization,
+                    )
                 )
 
         return self._loglikelihood_tokens(requests, override_bs=override_bs)
@@ -1029,7 +1150,9 @@ class TransformersModel(LightevalModel):
         return_bool_score: bool = True,
         rolling: bool = False,
     ) -> list[LoglikelihoodResponse]:
-        dataset = LoglikelihoodDataset(requests=requests, num_dataset_splits=self.DATASET_SPLITS)
+        dataset = LoglikelihoodDataset(
+            requests=requests, num_dataset_splits=self.DATASET_SPLITS
+        )
         starting_batch_size = STARTING_BATCH_SIZE
         res = []
 
@@ -1037,7 +1160,9 @@ class TransformersModel(LightevalModel):
             context_enc = dataset[0].tokenized_context
             continuation_enc = dataset[0].tokenized_continuation
             if rolling:  # we take all the sequence in rolling mode
-                max_context_continuation_size_allowed = len(context_enc + continuation_enc)
+                max_context_continuation_size_allowed = len(
+                    context_enc + continuation_enc
+                )
             else:  # in normal mode, we left cut the context if needed
                 max_context_continuation_size_allowed = len(
                     (context_enc + continuation_enc)[-(self.max_length + 1) :][:-1]
@@ -1050,7 +1175,9 @@ class TransformersModel(LightevalModel):
             )
             starting_batch_size = batch_size * 2
 
-            dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=lambda batch: batch)
+            dataloader = DataLoader(
+                dataset, batch_size=batch_size, collate_fn=lambda batch: batch
+            )
             if self.accelerator:
                 dataloader = self.accelerator.prepare(dataloader)
 
@@ -1062,32 +1189,52 @@ class TransformersModel(LightevalModel):
                 )
 
                 model_output = self._model_call(prepared_batch.input_ids)
-                logits = F.log_softmax(model_output, dim=-1)  # [batch, padding_length, vocab]
+                logits = F.log_softmax(
+                    model_output, dim=-1
+                )  # [batch, padding_length, vocab]
 
                 logits_sum = []
                 max_equals = []
                 batch_cont_tokens = []
-                for cur_request, cur_logits, inplen in zip(batch, logits, prepared_batch.input_lengths):
-                    cont_toks = torch.tensor(cur_request.tokenized_continuation, dtype=torch.long, device=self.device)
+                for cur_request, cur_logits, inplen in zip(
+                    batch, logits, prepared_batch.input_lengths
+                ):
+                    cont_toks = torch.tensor(
+                        cur_request.tokenized_continuation,
+                        dtype=torch.long,
+                        device=self.device,
+                    )
                     contlen = cont_toks.shape[0]
                     # We only look at the continuation tokens
                     if contlen > inplen:
                         # Continuation is longer than the input size, we are in rolling mode (only continuation)
-                        cur_logits = cur_logits.unsqueeze(0).to(self.device)  # [1, seq, vocab]
-                        cont_toks = cont_toks[:inplen].unsqueeze(0).to(self.device)  # [1, seq]
+                        cur_logits = cur_logits.unsqueeze(0).to(
+                            self.device
+                        )  # [1, seq, vocab]
+                        cont_toks = (
+                            cont_toks[:inplen].unsqueeze(0).to(self.device)
+                        )  # [1, seq]
                     else:
                         cur_logits = (
-                            cur_logits[inplen - contlen : inplen].unsqueeze(0).to(self.device)
+                            cur_logits[inplen - contlen : inplen]
+                            .unsqueeze(0)
+                            .to(self.device)
                         )  # [1, seq, voc]
                         cont_toks = cont_toks.unsqueeze(0).to(self.device)  # [1, seq]
 
                     # Check if per-token argmax is exactly equal to continuation
                     greedy_tokens = cur_logits.argmax(dim=-1).to(self.device)
                     # Sometimes the continuation is longer than allowed by the model, we only look at the first tokens
-                    max_equal = (greedy_tokens == cont_toks).all().squeeze(0).to(self.device)
+                    max_equal = (
+                        (greedy_tokens == cont_toks).all().squeeze(0).to(self.device)
+                    )
 
                     # Obtain log-probs at the corresponding continuation token indices
-                    cur_logits = torch.gather(cur_logits, 2, cont_toks.unsqueeze(-1)).squeeze(-1)  # [1, seq]
+                    cur_logits = torch.gather(
+                        cur_logits, 2, cont_toks.unsqueeze(-1)
+                    ).squeeze(
+                        -1
+                    )  # [1, seq]
 
                     # Answer: (log prob, is-exact-match)
                     logits_sum.append(cur_logits.sum())
@@ -1096,11 +1243,17 @@ class TransformersModel(LightevalModel):
 
                 # Sync all
                 # Need reshaping before gather
-                batched_inputs, len_inputs = self.pad_and_gather(prepared_batch.input_ids)
+                batched_inputs, len_inputs = self.pad_and_gather(
+                    prepared_batch.input_ids
+                )
                 max_cont_tokens_length = max(len(c[0]) for c in batch_cont_tokens)
                 batch_cont_tokens = torch.cat(
                     [
-                        F.pad(c, (0, max_cont_tokens_length - c.shape[1], 0, 0), value=self.tokenizer.pad_token_id)
+                        F.pad(
+                            c,
+                            (0, max_cont_tokens_length - c.shape[1], 0, 0),
+                            value=self.tokenizer.pad_token_id,
+                        )
                         for c in batch_cont_tokens
                     ],
                     dim=0,
@@ -1109,20 +1262,42 @@ class TransformersModel(LightevalModel):
                 # Can be gathered as such
                 logits = torch.tensor(logits_sum, device=self.device)
                 max_equal = torch.tensor(max_equals, device=self.device)
-                batch_truncated = torch.tensor(prepared_batch.truncated, device=self.device)
+                batch_truncated = torch.tensor(
+                    prepared_batch.truncated, device=self.device
+                )
                 batch_padded = torch.tensor(prepared_batch.padded, device=self.device)
                 if self.accelerator:
                     logits = self.accelerator.gather_for_metrics(logits)
                     max_equal = self.accelerator.gather_for_metrics(max_equal)
-                    batch_truncated = self.accelerator.gather_for_metrics(batch_truncated)
+                    batch_truncated = self.accelerator.gather_for_metrics(
+                        batch_truncated
+                    )
                     batch_padded = self.accelerator.gather_for_metrics(batch_padded)
 
-                for ix, (logit, cont_tokens, maxe, batched_input, trunc, padded) in enumerate(
-                    zip(logits, batch_cont_tokens, max_equal, batched_inputs, batch_truncated, batch_padded)
+                for ix, (
+                    logit,
+                    cont_tokens,
+                    maxe,
+                    batched_input,
+                    trunc,
+                    padded,
+                ) in enumerate(
+                    zip(
+                        logits,
+                        batch_cont_tokens,
+                        max_equal,
+                        batched_inputs,
+                        batch_truncated,
+                        batch_padded,
+                    )
                 ):
                     answer = LoglikelihoodResponse(
                         # todo: we might want to store the logits unsummed
-                        result=(float(logit.sum()), bool(maxe)) if return_bool_score else float(logit.sum()),
+                        result=(
+                            (float(logit.sum()), bool(maxe))
+                            if return_bool_score
+                            else float(logit.sum())
+                        ),
                         input_tokens=batched_input[: len_inputs[ix]].cpu().tolist(),
                         generated_tokens=cont_tokens[: len_tokens[ix]].cpu().tolist(),
                         truncated_tokens_count=trunc.cpu().item(),
@@ -1140,7 +1315,11 @@ class TransformersModel(LightevalModel):
         return dataset.get_original_order(res)
 
     def prepare_batch_logprob(
-        self, batch: list[Request], padding_length: int, max_context: Optional[int] = None, single_token: bool = False
+        self,
+        batch: list[Request],
+        padding_length: int,
+        max_context: Optional[int] = None,
+        single_token: bool = False,
     ):
         """Tokenize a batch of inputs and return also the length, truncations and padding.
         This step is done manually since we tokenize log probability inputs together with their continuation,
@@ -1150,7 +1329,8 @@ class TransformersModel(LightevalModel):
             inputs = [request.tokenized_context for request in batch]
         else:
             inputs = [
-                request.tokenized_context + request.tokenized_continuation[:-1] for request in batch
+                request.tokenized_context + request.tokenized_continuation[:-1]
+                for request in batch
             ]  # The last token (an eos) doesn't need to be given to the model
 
         input_tokens = []
@@ -1168,19 +1348,29 @@ class TransformersModel(LightevalModel):
             truncated.append(max(len(orig_tokens) - max_context, 0))
 
             # Truncate from the left if needed to fit in the model's context
-            tokens = torch.tensor((orig_tokens)[-max_context:], dtype=torch.long).to(self.device)
+            tokens = torch.tensor((orig_tokens)[-max_context:], dtype=torch.long).to(
+                self.device
+            )
             sequence_len = tokens.shape[0]
 
             # We add padding, if needed
-            padding_length = padding_length if padding_length is not None else sequence_len
+            padding_length = (
+                padding_length if padding_length is not None else sequence_len
+            )
 
             if padding_length - sequence_len < 0:
-                logger.warning(f"Padding length {padding_length} is smaller than input length {sequence_len}")
+                logger.warning(
+                    f"Padding length {padding_length} is smaller than input length {sequence_len}"
+                )
                 raise ValueError("Negative padding")
 
             padded.append(padding_length - sequence_len)
             # Right padding, since we ignore these logprobs in the end
-            tokens = F.pad(tokens, (0, padding_length - sequence_len), value=self.tokenizer.pad_token_id)
+            tokens = F.pad(
+                tokens,
+                (0, padding_length - sequence_len),
+                value=self.tokenizer.pad_token_id,
+            )
 
             # We create the attention mask to ignore padding
             mask = tokens == self.tokenizer.pad_token_id
@@ -1201,7 +1391,10 @@ class TransformersModel(LightevalModel):
         )
 
     def pad_and_gather(
-        self, output_tensor: torch.Tensor, drop_last_samples: bool = True, num_samples: int = None
+        self,
+        output_tensor: torch.Tensor,
+        drop_last_samples: bool = True,
+        num_samples: int = None,
     ) -> torch.Tensor:
         """
         Pads the `output_tensor` to the maximum length and gathers the lengths across processes.
@@ -1217,7 +1410,9 @@ class TransformersModel(LightevalModel):
         """
         # Create a tensor of size batch_size, [output_length] * batch_size, for each process
         # output_tensor can be of size: batch_size * num_samples * length_item or just batch_size * length_item
-        length_tensor = torch.tensor([output_tensor.shape[-1]] * output_tensor.shape[0], device=self.device)
+        length_tensor = torch.tensor(
+            [output_tensor.shape[-1]] * output_tensor.shape[0], device=self.device
+        )
         if self.accelerator is not None:
             # Gather all the lengths, we end up with a tensor of size num_processes [output_length_1, output_length_2, ...]
             length_tensor = self.accelerator.gather(length_tensor)
@@ -1237,7 +1432,9 @@ class TransformersModel(LightevalModel):
         return output_tensor, length_tensor
 
     def loglikelihood_single_token(
-        self, requests: list[LoglikelihoodSingleTokenRequest], override_bs: Optional[int] = None
+        self,
+        requests: list[LoglikelihoodSingleTokenRequest],
+        override_bs: Optional[int] = None,
     ) -> list[LoglikelihoodSingleTokenResponse]:
         """Tokenize the context and continuation and compute the log likelihood of those
         tokenized sequences.
@@ -1255,10 +1452,14 @@ class TransformersModel(LightevalModel):
                 request.tokenized_context = self.tok_encode(request.context)
 
             # Some models tokenizer want a space at the beginning and other not
-            continuations = [self._check_continuations_start_space(c) for c in request.choices]
+            continuations = [
+                self._check_continuations_start_space(c) for c in request.choices
+            ]
 
             # We must not accidentally prepend a continuation with a start of sentence token.
-            continuations_enc = [self.tok_encode(c, add_special_tokens=False) for c in continuations]
+            continuations_enc = [
+                self.tok_encode(c, add_special_tokens=False) for c in continuations
+            ]
             if any(len(c) > 1 for c in continuations_enc):
                 raise ValueError(
                     f"Trying to do single token multiple choice but one choice has several tokens: {continuations_enc}. "
@@ -1271,41 +1472,62 @@ class TransformersModel(LightevalModel):
     def _loglikelihood_single_token(
         self, requests: list[LoglikelihoodSingleTokenRequest], override_bs: int = -1
     ) -> list[LoglikelihoodSingleTokenResponse]:
-        dataset = LoglikelihoodSingleTokenDataset(requests=requests, num_dataset_splits=self.DATASET_SPLITS)
+        dataset = LoglikelihoodSingleTokenDataset(
+            requests=requests, num_dataset_splits=self.DATASET_SPLITS
+        )
         starting_batch_size = STARTING_BATCH_SIZE
         res = []
 
         for split_start, split_end in tqdm(dataset.splits_start_end_iterator()):
             context_enc = dataset[0].tokenized_context
             max_context = len(context_enc[-self.max_length :])
-            batch_size = self._get_batch_size(override_bs=override_bs, max_input_length=max_context)
+            batch_size = self._get_batch_size(
+                override_bs=override_bs, max_input_length=max_context
+            )
             starting_batch_size = batch_size * 2
 
-            dataloader = DataLoader(dataset, batch_size=starting_batch_size, collate_fn=lambda batch: batch)
+            dataloader = DataLoader(
+                dataset, batch_size=starting_batch_size, collate_fn=lambda batch: batch
+            )
             if self.accelerator is not None:
                 dataloader = self.accelerator.prepare(dataloader)
 
             for batch in tqdm(dataloader, disable=self.disable_tqdm, position=1):
                 prepared_batch = self.prepare_batch_logprob(
-                    batch, padding_length=max_context, max_context=max_context, single_token=True
+                    batch,
+                    padding_length=max_context,
+                    max_context=max_context,
+                    single_token=True,
                 )
 
-                out = self._model_call(prepared_batch.input_ids)  # [batch, padding_length, vocab]
-                out = F.log_softmax(out, dim=-1)  # we do a softmax over the options, no the vocab
+                out = self._model_call(
+                    prepared_batch.input_ids
+                )  # [batch, padding_length, vocab]
+                out = F.log_softmax(
+                    out, dim=-1
+                )  # we do a softmax over the options, no the vocab
 
                 batch_probs = []
                 batch_cont_tokens = []
-                for cur_request, logits, inplen in zip(batch, out, prepared_batch.input_lengths):
+                for cur_request, logits, inplen in zip(
+                    batch, out, prepared_batch.input_lengths
+                ):
                     # Get the last token
                     logits = logits[inplen - 1]  # [vocab]
 
                     cont_toks = torch.tensor(
-                        cur_request.tokenized_continuation, dtype=torch.long, device=self.device
-                    ).squeeze(-1)  # [num_choices]
+                        cur_request.tokenized_continuation,
+                        dtype=torch.long,
+                        device=self.device,
+                    ).squeeze(
+                        -1
+                    )  # [num_choices]
 
                     # Obtain log-probs at the corresponding continuation token indices
                     # last_token_slice = logits[:, -1, :].squeeze(0).tolist()
-                    probs = torch.gather(logits, dim=0, index=cont_toks)  # [num_choices]
+                    probs = torch.gather(
+                        logits, dim=0, index=cont_toks
+                    )  # [num_choices]
 
                     # Answer: (log prob, is-exact-match)
                     # probs = torch.nn.functional.softmax(logits.float(), dim=0)  # [num_choices]
@@ -1314,23 +1536,39 @@ class TransformersModel(LightevalModel):
 
                 # Sync all
                 # Need reshape before gather
-                batched_inputs, len_inputs = self.pad_and_gather(prepared_batch.input_ids)
+                batched_inputs, len_inputs = self.pad_and_gather(
+                    prepared_batch.input_ids
+                )
                 # We sometimes have different tasks with a different number of choices.
                 # Padding to -10000 makes sure that we won't reach index problems later as all log probs will be smaller than that
-                batch_probs = pad_sequence(batch_probs, batch_first=True, padding_value=-10000000)
+                batch_probs = pad_sequence(
+                    batch_probs, batch_first=True, padding_value=-10000000
+                )
                 batch_probs, len_probs = self.pad_and_gather(batch_probs)
-                batch_cont_tokens = pad_sequence(batch_cont_tokens, batch_first=True, padding_value=-10000000)
+                batch_cont_tokens = pad_sequence(
+                    batch_cont_tokens, batch_first=True, padding_value=-10000000
+                )
                 batch_cont_tokens, len_cont = self.pad_and_gather(batch_cont_tokens)
 
                 # No reshape
-                batch_truncated = torch.tensor(prepared_batch.truncated, device=self.device)
+                batch_truncated = torch.tensor(
+                    prepared_batch.truncated, device=self.device
+                )
                 batch_padded = torch.tensor(prepared_batch.padded, device=self.device)
                 if self.accelerator:
-                    batch_truncated = self.accelerator.gather_for_metrics(batch_truncated)
+                    batch_truncated = self.accelerator.gather_for_metrics(
+                        batch_truncated
+                    )
                     batch_padded = self.accelerator.gather_for_metrics(batch_padded)
 
                 for ix, (probs, cont_tokens, batched_input, trunc, padded) in enumerate(
-                    zip(batch_probs, batch_cont_tokens, batched_inputs, batch_truncated, batch_padded)
+                    zip(
+                        batch_probs,
+                        batch_cont_tokens,
+                        batched_inputs,
+                        batch_truncated,
+                        batch_padded,
+                    )
                 ):
                     answer = LoglikelihoodSingleTokenResponse(
                         result=probs[: len_probs[ix]].detach().cpu().tolist(),
@@ -1387,7 +1625,9 @@ class MultiTokenEOSCriteria(transformers.StoppingCriteria):
 
     def __call__(self, input_ids, scores, **kwargs) -> bool:
         # For efficiency, we compare the last n tokens where n is the number of tokens in the stop_sequence
-        lookback_ids_batch = input_ids[:, self.initial_decoder_input_length :][:, -self.sequence_id_len :]
+        lookback_ids_batch = input_ids[:, self.initial_decoder_input_length :][
+            :, -self.sequence_id_len :
+        ]
 
         lookback_tokens_batch = self.tokenizer.batch_decode(lookback_ids_batch)
 
@@ -1404,6 +1644,9 @@ def stop_sequences_criteria(
 ) -> transformers.StoppingCriteriaList:
     return transformers.StoppingCriteriaList(
         [
-            *[MultiTokenEOSCriteria(sequence, tokenizer, batch) for sequence in stop_sequences],
+            *[
+                MultiTokenEOSCriteria(sequence, tokenizer, batch)
+                for sequence in stop_sequences
+            ],
         ]
     )
