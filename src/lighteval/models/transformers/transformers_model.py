@@ -76,6 +76,10 @@ from lighteval.utils.imports import (
 from lighteval.utils.parallelism import find_executable_batch_size
 from lighteval.utils.utils import EnvConfig, as_list, boolstring_to_bool
 
+from quest.evaluation.llama import enable_tuple_kv_cache_for_llama
+from quest.evaluation.quest_attention import enable_quest_attention_eval
+
+from argparse import Namespace
 
 logger = logging.getLogger(__name__)
 
@@ -507,6 +511,14 @@ class TransformersModel(LightevalModel):
             token=env_config.token,
             quantization_config=config.quantization_config,
         )
+
+        model = model.eval()
+        args = {}
+        args["chunk_size"] = 16
+        args["token_budget"] = 2048
+        args = Namespace(**args)
+        enable_quest_attention_eval(model, args)
+        enable_tuple_kv_cache_for_llama(model, args)
 
         return model
 
