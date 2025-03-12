@@ -508,6 +508,10 @@ class TransformersModel(LightevalModel):
             quantization_config=config.quantization_config,
         )
 
+        from .yoco.yoco_attention import enable_yoco_attention_eval
+
+        enable_yoco_attention_eval(model, None)
+
         return model
 
     def _create_auto_tokenizer(
