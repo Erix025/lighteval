@@ -34,19 +34,39 @@ def cross_attn_forward(
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     input_shape = hidden_states.shape[:-1]
     hidden_shape = (*input_shape, -1, self.head_dim)
-
+    batch_size = hidden_states.shape[0]
+    kv_shape = (batch_size, -1, self.config.num_key_value_heads, self.head_dim)
     # sin and cos are specific to RoPE models; cache_position needed for the static cache
+    cos, sin = position_embeddings
     cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
     # get the cache for the previous layer
     k_cache, v_cache = past_key_value.update(
         None, None, self.layer_idx - 1, cache_kwargs
     )
 
-    query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-    key_states = self.k_proj(k_cache).view(hidden_shape).transpose(1, 2)
-    value_states = self.v_proj(v_cache).view(hidden_shape).transpose(1, 2)
+    k_cache = k_cache.transpose(1, 2).reshape(
+        -1, self.config.num_key_value_heads * self.head_dim
+    )
+    v_cache = v_cache.transpose(1, 2).reshape(
+        -1, self.config.num_key_value_heads * self.head_dim
+    )
+    print("k_cache", k_cache.shape)
 
-    cos, sin = position_embeddings
+    query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+    key_states = (
+        self.k_proj(self.up_proj(self.down_proj(k_cache)))
+        .view(kv_shape)
+        .transpose(1, 2)
+    )
+    value_states = (
+        self.v_proj(self.up_proj(self.down_proj(v_cache)))
+        .view(kv_shape)
+        .transpose(1, 2)
+    )
+    print("query_states", query_states.shape)
+    print("key_states", key_states.shape)
+    print("value_states", value_states.shape)
+
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     attention_interface: Callable = eager_attention_forward
@@ -84,6 +104,7 @@ layer_id = 32
 
 
 def enable_yoco_attention_eval(model, args):
+    print("Enabling yoco attention...")
     for name, module in reversed(model._modules.items()):
         if len(list(module.children())) > 0:
             enable_yoco_attention_eval(
@@ -102,3 +123,4 @@ def enable_yoco_attention_eval(model, args):
             model._modules[name].forward = types.MethodType(
                 cross_attn_forward, model._modules[name]
             )
+            print(f"layer {layer_id} is set as cross attention layer")
