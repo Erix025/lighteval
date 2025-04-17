@@ -53,7 +53,10 @@ if is_vllm_available():
     import ray
     from more_itertools import distribute
     from vllm import LLM, SamplingParams
-    from vllm.distributed.parallel_state import destroy_distributed_environment, destroy_model_parallel
+    from vllm.distributed.parallel_state import (
+        destroy_distributed_environment,
+        destroy_model_parallel,
+    )
     from vllm.transformers_utils.tokenizer import get_tokenizer
 
     logging.getLogger("vllm").propagate = True
@@ -82,7 +85,9 @@ class VLLMModelConfig:
     tensor_parallel_size: int = 1  # how many GPUs to use for tensor parallelism
     pipeline_parallel_size: int = 1  # how many GPUs to use for pipeline parallelism
     data_parallel_size: int = 1  # how many GPUs to use for data parallelism
-    max_model_length: int | None = None  # maximum length of the model, ussually infered automatically. reduce this if you encouter OOM issues, 4096 is usually enough
+    max_model_length: int | None = (
+        None  # maximum length of the model, ussually infered automatically. reduce this if you encouter OOM issues, 4096 is usually enough
+    )
     swap_space: int = 4  # CPU swap space size (GiB) per GPU.
     seed: int = 1234
     trust_remote_code: bool = False
@@ -91,8 +96,12 @@ class VLLMModelConfig:
     multichoice_continuations_start_space: bool = (
         True  # whether to add a space at the start of each continuation in multichoice generation
     )
-    pairwise_tokenization: bool = False  # whether to tokenize the context and continuation separately or together.
-    generation_parameters: GenerationParameters = None  # sampling parameters to use for generation
+    pairwise_tokenization: bool = (
+        False  # whether to tokenize the context and continuation separately or together.
+    )
+    generation_parameters: GenerationParameters = (
+        None  # sampling parameters to use for generation
+    )
 
     subfolder: Optional[str] = None
 
@@ -113,23 +122,37 @@ class VLLMModel(LightevalModel):
         self.data_parallel_size = int(config.data_parallel_size)
         self.tensor_parallel_size = int(config.tensor_parallel_size)
 
-        self._add_special_tokens = config.add_special_tokens if config.add_special_tokens is not None else False
+        self._add_special_tokens = (
+            config.add_special_tokens
+            if config.add_special_tokens is not None
+            else False
+        )
         self._tokenizer = self._create_auto_tokenizer(config, env_config)
 
-        self._max_length = int(config.max_model_length) if config.max_model_length is not None else None
+        self._max_length = (
+            int(config.max_model_length)
+            if config.max_model_length is not None
+            else None
+        )
 
         # If model_parallel is not set we compare the number of processes with the number of GPUs
         self.model = self._create_auto_model(config, env_config)
 
         # self._device = config.accelerator.device if config.accelerator is not None else "cpu"
-        self.multichoice_continuations_start_space = config.multichoice_continuations_start_space
+        self.multichoice_continuations_start_space = (
+            config.multichoice_continuations_start_space
+        )
 
         self.model_name = _simplify_name(config.pretrained)
         self.model_sha = ""  # config.get_model_sha()
         self.precision = _get_dtype(config.dtype, config=self._config)
 
-        self.model_info = ModelInfo(model_name=self.model_name, model_sha=self.model_sha)
-        self.sampling_params = SamplingParams(**config.generation_parameters.to_vllm_dict())
+        self.model_info = ModelInfo(
+            model_name=self.model_name, model_sha=self.model_sha
+        )
+        self.sampling_params = SamplingParams(
+            **config.generation_parameters.to_vllm_dict()
+        )
         self.pairwise_tokenization = config.pairwise_tokenization
 
     @property
@@ -138,8 +161,8 @@ class VLLMModel(LightevalModel):
 
     def cleanup(self):
         destroy_model_parallel()
-        if self.model is not None:
-            del self.model.llm_engine.model_executor.driver_worker
+        # if self.model is not None:
+        # del self.model.llm_engine.model_executor.driver_worker
         self.model = None
         gc.collect()
         ray.shutdown()
@@ -154,7 +177,9 @@ class VLLMModel(LightevalModel):
     def max_length(self) -> int:
         return self._max_length
 
-    def _create_auto_model(self, config: VLLMModelConfig, env_config: EnvConfig) -> Optional[LLM]:
+    def _create_auto_model(
+        self, config: VLLMModelConfig, env_config: EnvConfig
+    ) -> Optional[LLM]:
         """
         Creates an instance of the pretrained HF model.
 
@@ -175,7 +200,8 @@ class VLLMModel(LightevalModel):
         self.model_args = {
             "model": config.pretrained,
             "gpu_memory_utilization": float(config.gpu_memory_utilization),
-            "revision": config.revision + (f"/{config.subfolder}" if config.subfolder is not None else ""),
+            "revision": config.revision
+            + (f"/{config.subfolder}" if config.subfolder is not None else ""),
             "dtype": config.dtype,
             "trust_remote_code": config.trust_remote_code,
             "tensor_parallel_size": int(config.tensor_parallel_size),
@@ -225,10 +251,14 @@ class VLLMModel(LightevalModel):
             list[GenerateReturn]: list of generated responses.
         """
         for request in requests:
-            request.stop_sequence = as_list(request.stop_sequence) + [self.tokenizer.eos_token]
+            request.stop_sequence = as_list(request.stop_sequence) + [
+                self.tokenizer.eos_token
+            ]
             request.tokenized_context = self.tok_encode(request.context)
 
-        dataset = GenerativeTaskDataset(requests=requests, num_dataset_splits=self.DATASET_SPLITS)
+        dataset = GenerativeTaskDataset(
+            requests=requests, num_dataset_splits=self.DATASET_SPLITS
+        )
         results = []
 
         for _ in tqdm(
@@ -256,7 +286,9 @@ class VLLMModel(LightevalModel):
             num_samples = dataset[0].num_samples
 
             context = [c.context for c in dataset]
-            tokenized = self.tokenizer(context, add_special_tokens=self.add_special_tokens)
+            tokenized = self.tokenizer(
+                context, add_special_tokens=self.add_special_tokens
+            )
 
             # The main question for this step is the following:
             # Would we rather truncate the prompt to allow generation to go to max_new_tokens, at the risk
@@ -296,9 +328,14 @@ class VLLMModel(LightevalModel):
             )
 
             for vllm_output in vllm_outputs:
-                output_token_ids = [outputs.token_ids for outputs in vllm_output.outputs]
+                output_token_ids = [
+                    outputs.token_ids for outputs in vllm_output.outputs
+                ]
                 logprobs = [output.logprobs for output in vllm_output.outputs] or []
-                logprobs = [logprob[token_id].logprob for token_id, logprob in zip(output_token_ids[0], logprobs[0])]
+                logprobs = [
+                    logprob[token_id].logprob
+                    for token_id, logprob in zip(output_token_ids[0], logprobs[0])
+                ]
                 result = [output.text for output in vllm_output.outputs]
                 input_token_ids = vllm_output.prompt_token_ids
 
@@ -344,9 +381,13 @@ class VLLMModel(LightevalModel):
             # Hynek: With the newest vllm, it actually breaks when tensor_parallel_size == 1 and num_gpus not set,
             # as VLLM complains about no GPUs available.
             @ray.remote(num_gpus=1 if self.tensor_parallel_size == 1 else None)
-            def run_inference_one_model(model_args: dict, sampling_params: SamplingParams, requests):
+            def run_inference_one_model(
+                model_args: dict, sampling_params: SamplingParams, requests
+            ):
                 llm = LLM(**model_args)
-                return llm.generate(prompt_token_ids=requests, sampling_params=sampling_params)
+                return llm.generate(
+                    prompt_token_ids=requests, sampling_params=sampling_params
+                )
 
             # dispatch requests to all self.data_parallel_size workers, in interleaved fashion
             # interleaved important to balance context lengths across workers
@@ -359,7 +400,9 @@ class VLLMModel(LightevalModel):
             # flatten results
             outputs = [
                 x
-                for x in itertools.chain.from_iterable(itertools.zip_longest(*[list(x) for x in results]))
+                for x in itertools.chain.from_iterable(
+                    itertools.zip_longest(*[list(x) for x in results])
+                )
                 if x is not None
             ]
         else:
@@ -380,8 +423,12 @@ class VLLMModel(LightevalModel):
                 request.tokenized_continuation = self.tok_encode(request.choice)
             else:
                 # The following line is mandatory for compatibility with the harness
-                request.tokenized_context, request.tokenized_continuation = self.tok_encode_pair(
-                    request.context, request.choice, pairwise=self.pairwise_tokenization
+                request.tokenized_context, request.tokenized_continuation = (
+                    self.tok_encode_pair(
+                        request.context,
+                        request.choice,
+                        pairwise=self.pairwise_tokenization,
+                    )
                 )
         return self._loglikelihood_tokens(requests, override_bs=override_bs)
 
@@ -397,21 +444,31 @@ class VLLMModel(LightevalModel):
 
         for _ in tqdm(dataset.splits_start_end_iterator()):
             # the last token is an eos token, so we don't need to add it
-            inputs = [dataset[i].tokenized_context + dataset[i].tokenized_continuation for i in range(len(dataset))]
+            inputs = [
+                dataset[i].tokenized_context + dataset[i].tokenized_continuation
+                for i in range(len(dataset))
+            ]
             # Left truncate the inputs to the maximum length
             inputs = [input[-self.max_length :] for input in inputs]
             outputs = self._generate(inputs, generate=False)
 
             for output, input in zip(outputs, dataset):
                 continuation_logprobs = []
-                for token, logprobs in zip(input.tokenized_continuation[::-1], output.prompt_logprobs[::-1]):
+                for token, logprobs in zip(
+                    input.tokenized_continuation[::-1], output.prompt_logprobs[::-1]
+                ):
                     continuation_logprobs.append(logprobs[token])
                 bool_score = all(logprob.rank == 1 for logprob in continuation_logprobs)
-                continuation_logprobs = [logprob.logprob for logprob in continuation_logprobs]
+                continuation_logprobs = [
+                    logprob.logprob for logprob in continuation_logprobs
+                ]
                 answer = LoglikelihoodResponse(
                     input_tokens=input.tokenized_context + input.tokenized_continuation,
                     generated_tokens=input.tokenized_continuation,
-                    result=(sum(continuation_logprobs), bool_score if return_bool_score else None),
+                    result=(
+                        sum(continuation_logprobs),
+                        bool_score if return_bool_score else None,
+                    ),
                 )
                 res.append(answer)
 

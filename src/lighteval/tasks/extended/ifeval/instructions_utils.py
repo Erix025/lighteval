@@ -29,7 +29,7 @@ def download_nltk_resources():
         nltk.download("punkt")
 
 
-download_nltk_resources()
+# download_nltk_resources()
 
 WORD_LIST = [
     "western",
@@ -1596,9 +1596,7 @@ LANGUAGE_CODES = {
 _ALPHABETS = "([A-Za-z])"
 _PREFIXES = "(Mr|St|Mrs|Ms|Dr)[.]"
 _SUFFIXES = "(Inc|Ltd|Jr|Sr|Co)"
-_STARTERS = (
-    r"(Mr|Mrs|Ms|Dr|Prof|Capt|Cpt|Lt|He\s|She\s|It\s|They\s|Their\s|Our\s|We\s|But\s|However\s|That\s|This\s|Wherever)"
-)
+_STARTERS = r"(Mr|Mrs|Ms|Dr|Prof|Capt|Cpt|Lt|He\s|She\s|It\s|They\s|Their\s|Our\s|We\s|But\s|However\s|That\s|This\s|Wherever)"
 _ACRONYMS = "([A-Z][.][A-Z][.](?:[A-Z][.])?)"
 _WEBSITES = "[.](com|net|org|io|gov|edu|me)"
 _DIGITS = "([0-9])"
